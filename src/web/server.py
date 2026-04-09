@@ -17,7 +17,7 @@ app = FastAPI()
 model = Connect4Net()
 # Load checkpoint if exists
 if os.path.exists("checkpoint.pth"):
-    model.load_state_dict(torch.load("checkpoint.pth"))
+    model.load_state_dict(torch.load("checkpoint.pth", map_location='cpu'))
 model.eval()
 
 explainer = Explainer(model)
