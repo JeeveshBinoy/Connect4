@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connect 4 AlphaZero | Premium Engine</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #09090b;
+            --surface: #18181b;
+            --border: #27272a;
+            --p1: #ef4444; /* Clean Red */
+            --p2: #eab308; /* Clean Yellow */
+            --text-main: #fafafa;
+            --text-muted: #a1a1aa;
+            --accent: #3b82f6;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background-color: var(--bg);
+            color: var(--text-main);
+            font-family: 'Inter', -apple-system, sans-serif;
+            overflow: auto;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .app-wrapper {
+            display: flex;
+            gap: 40px;
+            width: 100%;
+            max-width: 1200px;
+            padding: 40px;
+            align-items: stretch;
+            min-height: 90vh;
+        }
+
+        /* --- Left Side: Game Area --- */
+        .game-section {
+            display: flex;
+            gap: 30px;
+            align-items: center;
+            flex: 1;
+        }
+
+        /* Tension Bar */
+        .tension-container {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 0;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+        .tension-track {
+            height: 100%;
+            width: 8px;
+            background: var(--surface);
+            border-radius: 4px;
+            margin: 10px 0;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+        .tension-fill {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 50%;
+            background: linear-gradient(to top, var(--p1), var(--p2));
+            transition: height 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+            border-radius: 4px;
+        }
+
+        /* Board */
+        .board-wrapper {
+            position: relative;
+            background: var(--surface);
+            padding: 24px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+        }
+        
+        .board {
+            display: grid;
+            grid-template-columns: repeat(7, 72px);
+            grid-template-rows: repeat(6, 72px);
+            gap: 12px;
+            position: relative;
+            z-index: 10;
+            transition: opacity 0.3s ease;
+        }
+
+        .cell {
+            width: 72px;
+            height: 72px;
+            background: var(--bg);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: inset 0 4px 6px rgba(0,0,0,0.5);
+            transition: 0.2s;
+            position: relative;
+        }
+        .cell:hover { background: #111113; }
+
+        .cell.p1::after { display: none; }
+        .cell.p2::after { display: none; }
+        
+        .chip {
+            position: absolute;
+            top: 6px; left: 6px; right: 6px; bottom: 6px;
+            border-radius: 50%;
+            animation: slip 0.35s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+            z-index: 12;
+        }
+        .chip.p1 { background: var(--p1); box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4); }
+        .chip.p2 { background: var(--p2); box-shadow: 0 4px 12px rgba(234, 179, 8, 0.4); }
+
+        @keyframes slip {
+            from { transform: translateY(-300px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        /* Overlays */
+        .overlay-layer {
+            position: absolute;
+            top: 24px; left: 24px; right: 24px; bottom: 24px;
+            pointer-events: none;
+            display: grid;
+            grid-template-columns: repeat(7, 72px);
+            grid-template-rows: repeat(6, 72px);
+            gap: 12px;
+        }
+        
+        .policy-overlay { z-index: 5; }
+        .policy-beam {
+            grid-row: 1 / span 6;
+            background: linear-gradient(to bottom, rgba(255,255,255,0.15), transparent);
+            border-radius: 36px;
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+
+        .xray-overlay { z-index: 15; opacity: 0; transition: opacity 0.3s ease; }
+        .xray-cell {
+            width: 72px; height: 72px;
+            border-radius: 50%;
+            transition: background-color 0.3s ease;
+        }
+
+        /* --- Right Side: Sidebar --- */
+        .sidebar {
+            width: 400px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        
+        .panel-header {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            font-weight: 700;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Status Header */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        .dot { width: 10px; height: 10px; border-radius: 50%; }
+        .dot.p1 { background: var(--p1); box-shadow: 0 0 10px var(--p1); }
+        .dot.p2 { background: var(--p2); box-shadow: 0 0 10px var(--p2); animation: pulse 1.5s infinite; }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.4; }
+            100% { opacity: 1; }
+        }
+
+        /* Text areas */
+        .strategy-text {
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: var(--text-main);
+        }
+
+        .pv-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .pv-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            background: var(--bg);
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        .pv-item strong { color: var(--text-main); }
+
+        /* Buttons */
+        .btn {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+        }
+        .btn:hover { background: var(--border); }
+        .btn.active {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--p1);
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+
+        #match-modal {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: var(--surface); padding: 40px 60px; border-radius: 24px;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.8); z-index: 100;
+            display: none; flex-direction: column; align-items: center; gap: 24px;
+            border: 1px solid var(--border);
+        }
+        #modal-title { font-size: 2.5rem; font-weight: 700; margin: 0; }
+    </style>
+<body>
+    <div id="match-modal">
+        <h2 id="modal-title">GAME OVER</h2>
+        <div style="display: flex; gap: 16px;">
+            <button class="btn" onclick="closeModal()" style="width: auto; padding: 12px 24px; background: transparent; border: 1px solid var(--border);">Review Board</button>
+            <button class="btn" onclick="resetGame()" style="width: auto; padding: 12px 24px; background: var(--text-main); color: var(--bg);">Play Again</button>
+        </div>
+    </div>
+
+    <div class="app-wrapper">
+        <!-- LEFT: Game Area -->
+        <div class="game-section">
+            <!-- Tension Bar -->
+            <div class="tension-container">
+                <div style="color: var(--p2);">AI</div>
+                <div class="tension-track">
+                    <div class="tension-fill" id="tension-fill"></div>
+                </div>
+                <div style="color: var(--p1);">YOU</div>
+            </div>
+
+            <!-- Board -->
+            <div>
+                <div class="board-wrapper">
+                    <div class="board" id="board"></div>
+                    <div class="overlay-layer policy-overlay" id="policy-overlay"></div>
+                    <div class="overlay-layer xray-overlay" id="heatmap"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: Console -->
+        <div class="sidebar">
+            <!-- Header Status -->
+            <div class="panel" style="padding: 16px 24px;">
+                <div class="status-badge" id="turn-badge">
+                    <div class="dot p1"></div> YOUR TURN
+                </div>
+            </div>
+
+            <!-- Strategy Log -->
+            <div class="panel" style="flex: 1; display: flex; flex-direction: column;">
+                <div class="panel-header">AlphaZero Strategy Log
+                    <button id="xray-btn" class="btn" style="width: auto; padding: 6px 12px; font-size: 0.7rem;" onclick="toggleXray()">Toggle X-Ray</button>
+                </div>
+                <div id="xai-explanation" class="strategy-text" style="flex: 1; overflow-y: auto; padding-top: 10px;">
+                    Make a move. The neural engine will output its real-time tactical reasoning here.
+                </div>
+            </div>
+
+            <div>
+                <button class="btn" onclick="resetGame()">Reset Board</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let board = Array(6).fill().map(() => Array(7).fill(0));
+        let currentPlayer = 1;
+        let gameOver = false;
+        let xrayEnabled = false;
+        let latestSaliency = null;
+
+        function toggleXray() {
+            xrayEnabled = !xrayEnabled;
+            const btn = document.getElementById('xray-btn');
+            
+            if (xrayEnabled) {
+                btn.classList.add('active');
+                if (latestSaliency) updateSaliency(latestSaliency);
+            } else {
+                btn.classList.remove('active');
+                document.querySelectorAll('.cell').forEach(c => c.style.backgroundColor = 'var(--bg)');
+            }
+        }
+
+        function createBoard() {
+            const boardEl = document.getElementById('board');
+            const heatEl = document.getElementById('heatmap');
+            const policyEl = document.getElementById('policy-overlay');
+            
+            boardEl.innerHTML = '';
+            heatEl.innerHTML = '';
+            policyEl.innerHTML = '';
+
+            for (let r = 0; r < 6; r++) {
+                for (let c = 0; c < 7; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.id = `cell-${r}-${c}`;
+                    cell.onclick = () => handleMove(c);
+                    boardEl.appendChild(cell);
+
+                    const hCell = document.createElement('div');
+                    hCell.className = 'xray-cell';
+                    hCell.id = `heat-${r}-${c}`;
+                    heatEl.appendChild(hCell);
+                }
+            }
+
+            for (let c = 0; c < 7; c++) {
+                const pCell = document.createElement('div');
+                pCell.className = 'policy-beam';
+                pCell.id = `policy-${c}`;
+                pCell.style.gridColumn = `${c + 1}`;
+                policyEl.appendChild(pCell);
+            }
+        }
+
+        function updateUI() {
+            const cells = document.querySelectorAll('.cell');
+            board.forEach((row, r) => {
+                row.forEach((val, c) => {
+                    const idx = r * 7 + c;
+                    const cell = cells[idx];
+                    
+                    if (val !== 0) {
+                        if (cell.children.length === 0) {
+                            const chip = document.createElement('div');
+                            chip.className = 'chip ' + (val === 1 ? 'p1' : 'p2');
+                            cell.appendChild(chip);
+                        }
+                    } else {
+                        if (cell.children.length > 0) cell.innerHTML = '';
+                    }
+                });
+            });
+            if (!gameOver) {
+                const badge = document.getElementById('turn-badge');
+                if (currentPlayer === 1) {
+                    badge.innerHTML = `<div class="dot p1"></div> <span style="color: var(--p1);">YOUR TURN</span>`;
+                } else {
+                    badge.innerHTML = `<div class="dot p2"></div> <span style="color: var(--p2);">AI THINKING...</span>`;
+                }
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('match-modal').style.display = 'none';
+        }
+
+        function showWinner(winner, draw) {
+            gameOver = true;
+            const badge = document.getElementById('turn-badge');
+            const modal = document.getElementById('match-modal');
+            const title = document.getElementById('modal-title');
+            
+            modal.style.display = 'flex';
+            
+            if (draw) {
+                badge.innerHTML = `<div class="dot" style="background: var(--text-main);"></div> <span style="color: var(--text-main);">MATCH DRAW</span>`;
+                title.innerText = "DRAW";
+                title.style.color = "var(--text-main)";
+            } else {
+                const color = winner === 1 ? 'var(--p1)' : 'var(--p2)';
+                const text = winner === 1 ? 'GAME OVER - YOU WIN' : 'GAME OVER - AI WINS';
+                badge.innerHTML = `<div class="dot" style="background: ${color};"></div> <span style="color: ${color};">${text}</span>`;
+                title.innerText = winner === 1 ? "YOU WIN" : "AI WINS";
+                title.style.color = color;
+                
+                if (winner === 1) {
+                    document.getElementById('xai-explanation').innerHTML = "You successfully outmaneuvered the neural network and connected four pieces. The board is now locked for your review.";
+                }
+            }
+        }
+
+        async function handleMove(col) {
+            if (currentPlayer !== 1 || gameOver) return;
+            
+            let moved = false;
+            for (let r = 5; r >= 0; r--) {
+                if (board[r][col] === 0) {
+                    board[r][col] = 1;
+                    moved = true;
+                    break;
+                }
+            }
+            if (!moved) return;
+            
+            currentPlayer = -1;
+            updateUI();
+            
+            try {
+                const response = await fetch('/api/move', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ board, player: -1 })
+                });
+                const data = await response.json();
+                
+                const aiCol = data.move;
+                for (let r = 5; r >= 0; r--) {
+                    if (board[r][aiCol] === 0) {
+                        board[r][aiCol] = -1;
+                        break;
+                    }
+                }
+                
+                updateSaliency(data.saliency);
+                updatePolicyGlow(data.probs);
+                updateTensionBar(data);
+                
+                if (data.insights && data.insights.explanation) {
+                    document.getElementById('xai-explanation').innerHTML = data.insights.explanation;
+                }
+                
+                if (data.gameOver) {
+                    showWinner(data.winner, data.draw);
+                } else {
+                    currentPlayer = 1;
+                    updateUI();
+                }
+            } catch (e) {
+                console.error(e);
+                currentPlayer = 1;
+                updateUI();
+            }
+        }
+
+        function updateSaliency(saliency) {
+            latestSaliency = saliency;
+            if(!saliency || !xrayEnabled) return;
+            saliency.forEach((row, r) => {
+                row.forEach((val, c) => {
+                const el = document.getElementById(`cell-${r}-${c}`);
+                if (el) {
+                    el.style.backgroundColor = `rgba(34, 197, 94, ${val * 1.5})`; 
+                }
+                });
+            });
+        }
+
+        function updatePolicyGlow(probs) {
+            if(!probs) return;
+            probs.forEach((p, c) => {
+                const el = document.getElementById(`policy-${c}`);
+                el.style.opacity = p; 
+            });
+        }
+
+        function updateTensionBar(data) {
+            if (!data || !data.insights || !data.insights.q_values) return;
+            const winProb = (data.insights.q_values[data.move] + 1) * 50; 
+            document.getElementById('tension-fill').style.height = `${winProb}%`;
+        }
+
+        function resetGame() {
+            board = Array(6).fill().map(() => Array(7).fill(0));
+            currentPlayer = 1;
+            gameOver = false;
+            latestSaliency = null;
+            document.getElementById('match-modal').style.display = 'none';
+            document.getElementById('turn-badge').innerHTML = `<div class="dot p1"></div> <span style="color: var(--p1);">YOUR TURN</span>`;
+            document.getElementById('xai-explanation').innerHTML = 'Make a move. The neural engine will output its real-time tactical reasoning here.';
+            document.getElementById('tension-fill').style.height = '50%';
+            
+            for(let c=0; c<7; c++) document.getElementById(`policy-${c}`).style.opacity = '0';
+            const boardCells = document.querySelectorAll('.cell');
+            boardCells.forEach(c => { c.innerHTML = ''; c.style.backgroundColor = 'var(--bg)'; });
+            
+            createBoard();
+            updateUI();
+            fetch('/api/reset');
+        }
+
+        createBoard();
+        updateUI();
+    </script>
+</body>
+</html>
